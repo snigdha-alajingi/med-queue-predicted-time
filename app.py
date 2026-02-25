@@ -10,8 +10,22 @@ from sklearn.model_selection import train_test_split
 # Load Data
 # ===============================
 df = pd.read_csv("HospitalsInIndia.csv")
+
+# Strip spaces from column names and text
+df.columns = df.columns.str.strip()
 df['City'] = df['City'].str.strip()
 df['Hospital'] = df['Hospital'].str.strip()
+
+# Check what your emergency column is called
+st.write("Columns in CSV:", df.columns.tolist())
+
+# Replace this with the exact column name from your CSV
+emergency_col = "Emergency Level"  # <- CHANGE if your CSV uses a different name
+
+# If emergency column is categorical, map it to numbers
+emergency_mapping = {"Low": 1, "Medium": 2, "High": 3}
+if df[emergency_col].dtype == object:
+    df[emergency_col] = df[emergency_col].map(emergency_mapping)
 
 # ===============================
 # Streamlit UI
@@ -34,17 +48,11 @@ if hospital_names:
     # ML Prediction Section
     # ===============================
 
-    # Use the same CSV for both UI and ML
-    # Make sure these columns exist in your CSV: "Queue Length", "Staff Available", "Emergency Level", "Estimated Waiting Time"
-    data = df.copy()  # using the same CSV
+    # Use the same CSV for ML features
+    data = filtered_hospitals.copy()  # only hospitals in the selected city
 
-    # Encode Emergency Level if it's categorical
-    emergency_mapping = {"Low": 1, "Medium": 2, "High": 3}
-    if data['Emergency Level'].dtype == object:
-        data['Emergency Level'] = data['Emergency Level'].map(emergency_mapping)
-
-    # Features and target
-    X = data[["Queue Length", "Staff Available", "Emergency Level"]]
+    # Features and target (replace column names with exact ones from CSV)
+    X = data[["Queue Length", "Staff Available", emergency_col]]
     y = data["Estimated Waiting Time"]
 
     # Train-test split
@@ -58,7 +66,7 @@ if hospital_names:
     rf_model.fit(X_train, y_train)
     xgb_model.fit(X_train, y_train)
 
-    # Take user input or generate randomly if you want demo values
+    # Generate demo values (or you can take input from user if you want)
     queue_length = np.random.randint(5, 60)
     staff_available = np.random.randint(5, 50)
     emergency_level = np.random.choice([1, 2, 3])  # numerical
@@ -95,5 +103,6 @@ if hospital_names:
     # Optional map if latitude/longitude exist
     if 'Latitude' in df.columns and 'Longitude' in df.columns:
         st.map(filtered_hospitals[['Latitude', 'Longitude']])
+
 else:
     st.warning("⚠ No hospitals found in this location. Try another city/town/village.")
