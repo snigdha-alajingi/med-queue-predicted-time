@@ -31,25 +31,23 @@ hospital_names = filtered_hospitals['Hospital'].tolist()
 if hospital_names:
     selected_hospital = st.selectbox("Select Hospital:", hospital_names)
 
-    # -----------------------------
+    # ===============================
     # Generate random demo operational data
-    # -----------------------------
+    # ===============================
     np.random.seed(42)
     queue_length = np.random.randint(5, 60)
     staff_available = np.random.randint(5, 50)
     emergency_level = np.random.choice([1, 2, 3])  # 1=Low, 2=Medium, 3=High
 
-    # -----------------------------
+    # ===============================
     # Synthetic ML training data
-    # -----------------------------
-    # 1000 rows of random queue/staff/emergency
+    # ===============================
     np.random.seed(0)
     X_synthetic = np.column_stack([
-        np.random.randint(5, 60, 1000),     # Queue Length
-        np.random.randint(5, 50, 1000),     # Staff Available
-        np.random.randint(1, 4, 1000)       # Emergency Level
+        np.random.randint(5, 60, 1000),   # Queue Length
+        np.random.randint(5, 50, 1000),   # Staff Available
+        np.random.randint(1, 4, 1000)     # Emergency Level
     ])
-    # Waiting time formula (just for synthetic training)
     y_synthetic = (X_synthetic[:,0] * 2 / np.maximum(X_synthetic[:,1],1) * X_synthetic[:,2] * 10).astype(int)
 
     # Train ML models
@@ -58,9 +56,7 @@ if hospital_names:
     rf_model.fit(X_synthetic, y_synthetic)
     xgb_model.fit(X_synthetic, y_synthetic)
 
-    # -----------------------------
-    # Predict waiting time using ML
-    # -----------------------------
+    # Predict waiting time
     user_input = np.array([[queue_length, staff_available, emergency_level]])
     model_choice = st.selectbox("Choose Model", ["Random Forest", "XGBoost"])
     if model_choice == "Random Forest":
@@ -68,9 +64,9 @@ if hospital_names:
     else:
         wait_time = int(round(xgb_model.predict(user_input)[0], 0))
 
-    # -----------------------------
+    # ===============================
     # Display Results
-    # -----------------------------
+    # ===============================
     st.markdown("### 📊 Live Hospital Status")
     st.write(f"🧍 Queue Length: {queue_length}")
     st.write(f"👨‍⚕ Staff Available: {staff_available}")
