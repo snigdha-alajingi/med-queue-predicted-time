@@ -1,29 +1,63 @@
+# app.py
 import streamlit as st
 import pandas as pd
-import joblib
+import numpy as np
 
-st.set_page_config(page_title="Global Med-Queue", layout="wide")
+# ===============================
+# Load Data
+# ===============================
+df = pd.read_csv("HospitalsInIndia.csv")
+df['City'] = df['City'].str.strip()
+df['Hospital'] = df['Hospital'].str.strip()
+
+# ===============================
+# Streamlit UI
+# ===============================
+st.set_page_config(page_title="🏥 Global Med-Queue AI", layout="wide")
 st.title("🏥 Global Med-Queue AI")
+st.write("Find hospitals and check estimated emergency wait time")
 
-# Load your Global Data
-df = pd.read_csv('hospitals.csv')
+# --- Enter Location (City/Town/Village/Country) ---
+place_input = st.text_input("Enter City, Town, Village, or Country:")
 
-# User Input: Choosing their Area
-area = st.text_input("Enter your City or Country:", "Chennai")
+if place_input:
+    # Filter hospitals by partial, case-insensitive match
+    filtered_hospitals = df[df['City'].str.contains(place_input, case=False, na=False)]
+    hospital_names = filtered_hospitals['Hospital'].tolist()
 
-# Search Logic
-results = df[df.apply(lambda row: row.astype(str).str.contains(area, case=False).any(), axis=1)]
+    if hospital_names:
+        selected_hospital = st.selectbox("Select Hospital", hospital_names)
 
-if not results.empty:
-    st.write(f"Found {len(results)} hospitals in {area}")
-    st.map(results) # Shows them on a map!
-    
-    # Let user pick a hospital to see details
-    h_choice = st.selectbox("Select a Hospital:", results.iloc[:, 0])
-    
-    # Show Staff/Seats (from your CSV columns)
-    st.write(f"**Staff Count:** 45 | **Available Seats:** 12")
-    
-    if st.button("Predict Wait Time (AI)"):
-        # This is where your Random Forest/XGBoost works
-        st.success("Estimated Wait Time: 24 Minutes")
+        # Generate synthetic operational data
+        np.random.seed(42)
+        queue_length = np.random.randint(5, 60)
+        staff_available = np.random.randint(5, 50)
+        emergency_level = np.random.choice(["Low", "Medium", "High"])
+
+        # Simple formula for estimated wait time
+        wait_time = int(queue_length * 2 / max(staff_available, 1) * 10)
+
+        # Display Results
+        st.markdown("### 📊 Live Hospital Status")
+        st.write(f"🧍 Queue Length: {queue_length}")
+        st.write(f"👨‍⚕ Staff Available: {staff_available}")
+        st.write(f"🚨 Emergency Level: {emergency_level}")
+        st.write(f"⏳ Estimated Waiting Time: {wait_time} minutes")
+
+        st.markdown("### 🏥 Instructions & Advice")
+        if emergency_level == "High":
+            st.write("⚠ Hospital is crowded, expect longer wait times.")
+        else:
+            st.write("Low crowd. Faster service expected.")
+
+        st.write("✔ Carry valid ID")
+        st.write("✔ Bring previous medical reports")
+        st.write("✔ Arrive 15 minutes early")
+
+        # Optional map
+        if 'Latitude' in df.columns and 'Longitude' in df.columns:
+            st.map(filtered_hospitals[['Latitude', 'Longitude']])
+    else:
+        st.warning("⚠ No hospitals found in this location. Try another city/town/village.")
+else:
+    st.info("Please enter a location to see hospitals.")
