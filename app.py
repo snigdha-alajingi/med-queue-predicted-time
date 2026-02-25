@@ -2,9 +2,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from sklearn.ensemble import RandomForestRegressor
 from xgboost import XGBRegressor
-from sklearn.model_selection import train_test_split
 
 # ===============================
 # Load Data
@@ -32,7 +30,7 @@ if hospital_names:
     selected_hospital = st.selectbox("Select Hospital:", hospital_names)
 
     # ===============================
-    # Generate random demo operational data
+    # Generate demo operational data
     # ===============================
     np.random.seed(42)
     queue_length = np.random.randint(5, 60)
@@ -50,19 +48,13 @@ if hospital_names:
     ])
     y_synthetic = (X_synthetic[:,0] * 2 / np.maximum(X_synthetic[:,1],1) * X_synthetic[:,2] * 10).astype(int)
 
-    # Train ML models
-    rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
+    # Train XGBoost model
     xgb_model = XGBRegressor(n_estimators=100, learning_rate=0.1, random_state=42)
-    rf_model.fit(X_synthetic, y_synthetic)
     xgb_model.fit(X_synthetic, y_synthetic)
 
     # Predict waiting time
     user_input = np.array([[queue_length, staff_available, emergency_level]])
-    model_choice = st.selectbox("Choose Model", ["Random Forest", "XGBoost"])
-    if model_choice == "Random Forest":
-        wait_time = int(round(rf_model.predict(user_input)[0], 0))
-    else:
-        wait_time = int(round(xgb_model.predict(user_input)[0], 0))
+    wait_time = int(round(xgb_model.predict(user_input)[0], 0))
 
     # ===============================
     # Display Results
