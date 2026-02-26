@@ -1,18 +1,33 @@
-# app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+from datetime import datetime
 from xgboost import XGBRegressor
 
 # ===============================
-# Load Data
+# Google Sheets Setup
 # ===============================
-df = pd.read_csv("HospitalsInIndia.csv")
-df.columns = df.columns.str.strip()
-df['City'] = df['City'].str.strip()
-df['Hospital'] = df['Hospital'].str.strip()
-if 'Website' not in df.columns:
-    df['Website'] = "https://example.com"
+scope = ["https://spreadsheets.google.com/feeds",
+         "https://www.googleapis.com/auth/spreadsheets",
+         "https://www.googleapis.com/auth/drive.file",
+         "https://www.googleapis.com/auth/drive"]
+
+creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+client = gspread.authorize(creds)
+
+# Sheets
+sheet_hospitals = client.open("HospitalQueueData").worksheet("Hospitals")
+sheet_appointments = client.open("HospitalQueueData").worksheet("Appointments")
+sheet_logs = client.open("HospitalQueueData").worksheet("Logs")
+
+# ===============================
+# Load Hospital Data
+# ===============================
+hospital_df = pd.DataFrame(sheet_hospitals.get_all_records())
+hospital_df['Hospital'] = hospital_df['Hospital'].str.strip()
+hospital_df['City'] = hospital_df['City'].str.strip()
 
 # ===============================
 # Streamlit UI
@@ -21,111 +36,99 @@ st.set_page_config(page_title="🏥 Global Med-Queue AI", layout="wide")
 st.title("🏥 Global Med-Queue AI")
 
 # --- Select City/Town/Village/Country ---
-unique_cities = sorted(df['City'].unique())
-selected_city = st.selectbox("Select City / Town / Village / Country:", unique_cities)
+cities = sorted(hospital_df['City'].unique())
+selected_city = st.selectbox("Select City / Town / Village / Country:", cities)
 
-# Filter hospitals in selected city
-filtered_hospitals = df[df['City'] == selected_city]
-hospital_names = filtered_hospitals['Hospital'].tolist()
+city_df = hospital_df[hospital_df['City'] == selected_city]
+hospital_list = city_df['Hospital'].tolist()
 
-if hospital_names:
-    selected_hospital = st.selectbox("Select Hospital:", hospital_names)
+if hospital_list:
+    selected_hospital = st.selectbox("Select Hospital:", hospital_list)
 
-    # ===============================
-    # Session state for dynamic hospital data
-    # ===============================
-    if 'hospital_data' not in st.session_state:
-        st.session_state.hospital_data = {}
-    if selected_hospital not in st.session_state.hospital_data:
-        np.random.seed(hash(selected_hospital) % 2**32)
-        st.session_state.hospital_data[selected_hospital] = {
-            "queue_length": np.random.randint(5, 60),
-            "staff_available": np.random.randint(5, 50),
-            "emergency_level": np.random.choice([1, 2, 3]),
-            "appointments": []  # List to store patient bookings
-        }
-
-    hospital_status = st.session_state.hospital_data[selected_hospital]
+    # Fetch current live values from sheet
+    hosp_row = hospital_df[hospital_df['Hospital'] == selected_hospital].iloc[0]
+    queue_length = int(hosp_row['Queue'])
+    staff_available = int(hosp_row['Staff'])
+    emergency_level = int(hosp_row['Emergency'])
+    hospital_website = hosp_row.get('Website', "https://example.com")
 
     # ===============================
-    # Synthetic ML training data
+    # Train ML Wait Time Model
     # ===============================
     np.random.seed(0)
-    X_synthetic = np.column_stack([
+    X_synth = np.column_stack([
         np.random.randint(5, 60, 1000),
         np.random.randint(5, 50, 1000),
         np.random.randint(1, 4, 1000)
     ])
-    y_synthetic = (X_synthetic[:,0] * 2 / np.maximum(X_synthetic[:,1],1) * X_synthetic[:,2] * 10).astype(int)
-    xgb_model = XGBRegressor(n_estimators=100, learning_rate=0.1, random_state=42)
-    xgb_model.fit(X_synthetic, y_synthetic)
+    y_synth = (X_synth[:,0] * 2 / np.maximum(X_synth[:,1],1) * X_synth[:,2] * 10).astype(int)
+
+    xgb = XGBRegressor(n_estimators=100, learning_rate=0.1, random_state=42)
+    xgb.fit(X_synth, y_synth)
 
     # ===============================
-    # Patient pre-booking form
+    # Patient Booking Form
     # ===============================
-    st.markdown("### 📝 Patient Pre-Booking Form")
-    with st.form(key='booking_form'):
-        patient_name = st.text_input("Full Name")
-        patient_age = st.number_input("Age", min_value=0, max_value=120, value=30)
-        patient_gender = st.selectbox("Gender", ["Male", "Female", "Other"])
-        patient_contact = st.text_input("Contact Number")
-        patient_emergency_level = st.selectbox(
-            "Emergency Level", ["Low", "Medium", "High"], index=0
-        )
-        submit_button = st.form_submit_button(label="Submit Appointment Request")
+    st.markdown("### 📝 Book Appointment")
+    with st.form(key="appt_form"):
+        pname = st.text_input("Full Name")
+        page = st.number_input("Age", min_value=0, max_value=120, value=30)
+        pgender = st.selectbox("Gender", ["Male", "Female", "Other"])
+        pcontact = st.text_input("Contact Number")
+        pemerg = st.selectbox("Emergency Level", ["Low", "Medium", "High"])
+        submit = st.form_submit_button("Submit")
 
-    if submit_button:
-        # Map emergency level text to numeric
-        emergency_level_map = {"Low": 1, "Medium": 2, "High": 3}
-        patient_emergency_numeric = emergency_level_map[patient_emergency_level]
+    if submit:
+        # Map
+        level_map = {"Low":1,"Medium":2,"High":3}
+        pnum = level_map[pemerg]
 
-        # Update hospital queue dynamically
-        hospital_status['queue_length'] += 1
-        hospital_status['staff_available'] = max(1, hospital_status['staff_available'] + np.random.randint(-2, 3))
-        hospital_status['emergency_level'] = np.random.choice([1, 2, 3])
+        queue_length += 1
+        staff_available = max(1, staff_available + np.random.randint(-2,3))
+        emergency_level = np.random.choice([1,2,3])
 
-        # Predict waiting time
-        user_input = np.array([[hospital_status['queue_length'],
-                                hospital_status['staff_available'],
-                                patient_emergency_numeric]])
-        wait_time = int(round(xgb_model.predict(user_input)[0], 0))
+        # Predict wait
+        arr = np.array([[queue_length, staff_available, pnum]])
+        est_wait = int(round(xgb.predict(arr)[0],0))
 
-        # Save appointment
-        hospital_status['appointments'].append({
-            "Name": patient_name,
-            "Age": patient_age,
-            "Gender": patient_gender,
-            "Contact": patient_contact,
-            "Emergency": patient_emergency_level,
-            "Estimated Wait (min)": wait_time
-        })
+        # Update sheet
+        cell = sheet_hospitals.find(selected_hospital)
+        sheet_hospitals.update_cell(cell.row, 3, queue_length)  # Queue
+        sheet_hospitals.update_cell(cell.row, 4, staff_available)
+        sheet_hospitals.update_cell(cell.row, 5, emergency_level)
 
-        st.success("✅ Appointment request submitted successfully!")
+        sheet_appointments.append_row([
+            selected_hospital, pname, page, pgender, pcontact, pemerg, est_wait
+        ])
+
+        sheet_logs.append_row([
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "New Booking",
+            selected_hospital,
+            f"{pname}, {pemerg}, wait={est_wait}"
+        ])
+
+        st.success(f"✅ Appointment booked! Est. wait: {est_wait} mins")
 
     # ===============================
-    # Display live hospital status
+    # Display Live Hospital Status
     # ===============================
     st.markdown("### 📊 Live Hospital Status")
-    st.write(f"🧍 Queue Length: {hospital_status['queue_length']}")
-    st.write(f"👨‍⚕ Staff Available: {hospital_status['staff_available']}")
-    emergency_text = {1: "Low", 2: "Medium", 3: "High"}[hospital_status['emergency_level']]
-    st.write(f"🚨 Emergency Level: {emergency_text}")
+    st.write(f"🧍 Queue Length: {queue_length}")
+    st.write(f"👨‍⚕ Staff Available: {staff_available}")
+    em_text = {1:"Low",2:"Medium",3:"High"}.get(emergency_level,"Unknown")
+    st.write(f"🚨 Emergency Level: {em_text}")
+    st.markdown(f"🌐 Hospital Website: [{hospital_website}]({hospital_website})")
 
     # ===============================
-    # Display upcoming appointments
+    # Display Upcoming Appointments
     # ===============================
-    if hospital_status['appointments']:
+    appt_df = pd.DataFrame(sheet_appointments.get_all_records())
+    appt_df = appt_df[appt_df['Hospital'] == selected_hospital]
+    if not appt_df.empty:
         st.markdown("### 📋 Upcoming Appointments")
-        df_appointments = pd.DataFrame(hospital_status['appointments'])
-        st.dataframe(df_appointments)
-
-    # Hospital website
-    website = filtered_hospitals[filtered_hospitals['Hospital'] == selected_hospital]['Website'].values[0]
-    st.markdown(f"🌐 Visit Hospital Website: [{website}]({website})")
-
-    # Optional map
-    if 'Latitude' in df.columns and 'Longitude' in df.columns:
-        st.map(filtered_hospitals[['Latitude', 'Longitude']])
+        st.dataframe(appt_df)
 
 else:
-    st.warning("⚠ No hospitals found in this location. Try another city/town/village.")
+    st.warning("⚠ No hospitals found here. Try another city.")
+    
